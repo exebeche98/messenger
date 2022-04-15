@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class User:
-    name: str
+    id: str  # primary key
+    username: str  # super key and сandidate key, username are unique
     password: str
-    id: str
+

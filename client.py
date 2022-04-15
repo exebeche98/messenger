@@ -22,5 +22,3 @@ class Client:
 
     def get_conversation(self, username: str):
         pass
-
-    #
