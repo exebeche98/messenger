@@ -46,7 +46,7 @@ class AbstractStorage(object):
         raise NotImplemented
 
     @abstractmethod
-    def get_all_messages(self, sender: str, receiver: str, text: str) -> Iterable[Message]:
+    def get_all_messages(self) -> Iterable[Message]:
         raise NotImplemented
 
     @abstractmethod
@@ -70,7 +70,7 @@ class DatabaseStorage(AbstractStorage):
                                                  password text,
                                                  phone text);
                                                                                                                                                                             
-               CREATE TABLE IF NOT EXISTS messages (id int PRIMARY KEY,
+               CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY,
                                                     message_text text,
                                                     date_send TIMESTAMP,
                                                     from_id INTEGER,
@@ -130,7 +130,6 @@ class DatabaseStorage(AbstractStorage):
         try:
             _sender_id = self.__cursor.execute('SELECT id FROM'
                                             ' users WHERE username=:username', {'username': sender_name})
-
             _sender_id = next(_sender_id)
             _sender_id = _sender_id[0]
 
@@ -142,16 +141,34 @@ class DatabaseStorage(AbstractStorage):
             _id = uuid.uuid4().int & (1 << 63) - 1  # create random int id
             now = datetime.datetime.now()
             print(now)
-
             insertQuery = """INSERT INTO messages VALUES (?, ?, ?, ?, ?);"""
             self.__cursor.execute(insertQuery, (_id, text, now, _sender_id, _receiver_id))
             self.__connection.commit()
+            print("Message send!!!")
         except:
             print(f"Can not send message {text[:10]} from {sender_name} to {receiver_name}")
 
+    def get_all_messages(self) -> Iterable[Message]:
+        yield from (self.__make_message(row) for row in self.__cursor.execute('SELECT * FROM messages'))
 
-    def get_all_messages(self, sender: str, receiver: str, text: str) -> Iterable[Message]:
-        raise NotImplemented
+    def get_two_users_conversation(self, sender_name: str, receiver_name: str) -> Iterable[Message]:
+        _sender_id = self.__cursor.execute('SELECT id FROM'
+                                          ' users WHERE username=:username', {'username': sender_name})
+        _sender_id = next(_sender_id)
+        _sender_id = _sender_id[0]
+
+        _receiver_id = self.__cursor.execute('SELECT id FROM'
+                                            ' users WHERE username=:username', {'username': receiver_name})
+        _receiver_id = next(_receiver_id)
+        _receiver_id = _receiver_id[0]
+
+        yield from (self.__make_message(row) for row in self.__cursor.execute('SELECT * FROM'
+                                                                              ' messages WHERE'
+                                                                              '(from_id=:sender_id AND to_id=:receiver_id) OR'
+                                                                              '(from_id=:receiver_id AND to_id=:sender_id)',
+                                                                              {'sender_id': _sender_id, 'receiver_id':_receiver_id}))
+
+
 
 
     @staticmethod
