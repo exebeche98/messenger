@@ -1,16 +1,20 @@
-from abc import abstractmethod
-from typing import Iterable, Optional
-from _datetime import datetime
-
-import uuid
 from message import *
 from user import *
-from conversation import *
 
-# TODO add contacts
+import sqlite3
+import uuid
+from typing import Iterable, Optional
+
+from abc import abstractmethod
+from dataclasses import asdict
+from pathlib import Path
+from typing import Iterable, Tuple
+import datetime
+
+# TODO logic for conversations and messages
 class AbstractStorage(object):
     """
-    Определяет интерфейс хранилища пользователей их контаков, и переписок.
+    Определяет интерфейс хранилища пользователей и из сообщений.
     Список контактов пользователя хранится на сервере.
     """
 
@@ -27,114 +31,134 @@ class AbstractStorage(object):
         raise NotImplemented
 
     @abstractmethod
+    def get_user_id(self, username: str):
+        raise NotImplemented
+
+
+    @abstractmethod
     def delete_user(self, username: str):
         raise NotImplemented
 
     ###########################################################################
 
     @abstractmethod
-    def get_conversations(self) -> Iterable[Conversation]:
+    def send_message(self, sender_name: str, receiver_name: str, text: str):
         raise NotImplemented
 
     @abstractmethod
-    def get_conversation(self, conv_id: str) -> Optional[Conversation]:
+    def get_all_messages(self, sender: str, receiver: str, text: str) -> Iterable[Message]:
         raise NotImplemented
 
     @abstractmethod
-    def add_conversation(self, sender: str, receiver: str) -> None:
-        raise NotImplemented
-
-    @abstractmethod
-    def delete_conversation(self, user_id: str):
-        raise NotImplemented
-
-    @abstractmethod
-    def send_message(self, sender: str, receiver: str, text: str):
+    def get_two_users_conversation(self, sender: str, receiver: str) -> Iterable[Message]:
         raise NotImplemented
 
 
-class BaseStorage(object):
+class DatabaseStorage(AbstractStorage):
     """
-    Базовый класс хранилища пользователей, контактов и переписок (содержит только данные).
+    Реализация хранилища в базе данных sqlite.
     """
 
-    def __init__(self):
-        self._conversations = {}
-        self._users = {}
-        self._contacts = {}
+    def __init__(self, path: Path):
+        self.__connection = sqlite3.Connection(path,
+                                               detect_types=sqlite3.PARSE_DECLTYPES |
+                                               sqlite3.PARSE_COLNAMES)
+        self.__cursor = self.__connection.cursor()
+        self.__cursor.executescript(
+            '''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                 username text UNIQUE,
+                                                 password text,
+                                                 phone text);
+                                                                                                                                                                            
+               CREATE TABLE IF NOT EXISTS messages (id int PRIMARY KEY,
+                                                    message_text text,
+                                                    date_send TIMESTAMP,
+                                                    from_id INTEGER,
+                                                    to_id INTEGER,
+                                                    FOREIGN KEY (from_id)  REFERENCES users (id),
+                                                    FOREIGN KEY (to_id)  REFERENCES users (id)
+                                                    );
+            '''
+        )
 
-
-class ReadWriteStorage(AbstractStorage, BaseStorage):
+#######################################################################
     def get_users(self) -> Iterable[User]:
-        return self._users
+        yield from (self.__make_user(row) for row in self.__cursor.execute('SELECT * FROM users'))
 
-    def get_user_by_name(self, username: str) -> Optional[User ]:
-        if username in self._users:
-            return self._users[username]
-        else:
-            print(f"No user {username}")
+    def get_user_by_name(self, _username: str) -> Optional[User]:
+        try:
+            #  'SELECT * FROM notes WHERE id=:id', {'id': note_id}
+            user = self.__cursor.execute('SELECT * FROM users WHERE username=:username', {'username': _username})
+            user = self.__make_user(next(user)) # TODO Почему тут должен быть NEXT?
+            return user
+        except:
+            print(f'Can not find user {_username}...')
 
-    def add_user(self, username: str, password: str):
-        if username in self.users:
-            print(f"User with username {username} already exist, try another username")
-        else:
-            _id = str(uuid.uuid4())
-            _user = User(name=username, id=_id, password=password)
-            self.users[username] = _user
-            print(f"User {username} added successful")
+    def add_user(self, username: str, password: str, phone: str): # TODO добавить условие на пароль
+        try:
+            _id = uuid.uuid4().int & (1 << 63)-1  # create random int id
+            _user = User(id=_id, username=username, password=password, phone=phone)
+            self.__cursor.execute(
+                'INSERT INTO users VALUES (:id, :username, :password, :phone ) '
+                '  ON CONFLICT (id) DO UPDATE SET id=:id, username=:username, password=:password, phone=:phone',
+                asdict(_user)
+            )
+            self.__connection.commit()
+        except:
+            print(f'Пользоваьель с именем {username} уже существует')
 
-    def delete_user(self, username: str):
-        if username not in self._users:
-            print(f"User with nickname: {username} doesn't exist, try another nickname")
-        else:
-            print(f"User with name {username} deleted")
-            del self._users[username]
+    def delete_user(self, _username: str):
+        try:
+            self.__cursor.execute('DELETE FROM users WHERE username=:username', {'username': _username})
+            self.__connection.commit()
+            print(f"User with name {_username} deleted successfully")
+        except:
+            print(f"Can not delete user with name {_username}...")
 
-    def get_conversations(self) -> Iterable[Conversation]:
-        return self._conversations
+    def get_user_id(self, _username: str) -> int | None:
+        try:
+            _sender_id = self.__cursor.execute('SELECT id FROM users WHERE username=:username', {'username': _username})
+            _sender_id = next(_sender_id)
+            _sender_id = _sender_id[0]
+            return _sender_id
+        except:
+            print(f"Can not find user{_username}")
 
-    def get_conversation(self, conv_id: str) -> Conversation | None:
-        if conv_id in self._conversations:
-            return self._conversations[conv_id]
-        else:
-            return None
+#######################################################################
 
-    def add_conversation(self, sender: str, receiver: str):
-        sender_id = self._users[sender].id
-        receiver_id = self._users[receiver].id
+    def send_message(self, sender_name: str, receiver_name: str, text: str):
+        try:
+            _sender_id = self.__cursor.execute('SELECT id FROM'
+                                            ' users WHERE username=:username', {'username': sender_name})
 
-        id_1 = sender_id + ' ' + receiver_id
-        id_2 = receiver_id + ' ' + sender_id
+            _sender_id = next(_sender_id)
+            _sender_id = _sender_id[0]
 
-        if self.get_conversation(id_1) is None and self.get_conversation(id_2) is None:
-            self._conversations[id_1] = []
-        else:
-            print("This conversation already exist")
+            _receiver_id = self.__cursor.execute('SELECT id FROM'
+                                              ' users WHERE username=:username', {'username': receiver_name})
+            _receiver_id = next(_receiver_id)
+            _receiver_id = _receiver_id[0]
 
-    def delete_conversation(self, conversation_id: str):
-        if conversation_id not in self._conversations:
-            print(f"Conversation_id: {conversation_id} doesn't exist, try another conversation_id")
-        else:
-            print(f"User with name {conversation_id} deleted")
-            del self._conversations[conversation_id]
+            _id = uuid.uuid4().int & (1 << 63) - 1  # create random int id
+            now = datetime.datetime.now()
+            print(now)
 
-    def send_message(self, sender: str, receiver: str, text: str):
-        sender_id = self._users[sender].id
-        receiver_id = self._users[receiver].id
-
-        _time = datetime.now()
-        _msg = Message(time_send=str(_time), text=text, sender=sender, receiver=receiver)
-
-        id_1 = sender_id + ' ' + receiver_id
-        id_2 = receiver_id + ' ' + sender_id
-
-        if self.get_conversation(id_1) is not None:
-            self._conversations[id_1].append(_msg)
-        elif self.get_conversation(id_2) is not None:
-            self._conversations[id_2].append(_msg)
-        else:
-            self._conversations[id_1] = []
-            self._conversations[id_1].append(_msg)
+            insertQuery = """INSERT INTO messages VALUES (?, ?, ?, ?, ?);"""
+            self.__cursor.execute(insertQuery, (_id, text, now, _sender_id, _receiver_id))
+            self.__connection.commit()
+        except:
+            print(f"Can not send message {text[:10]} from {sender_name} to {receiver_name}")
 
 
+    def get_all_messages(self, sender: str, receiver: str, text: str) -> Iterable[Message]:
+        raise NotImplemented
+
+
+    @staticmethod
+    def __make_user(row: Tuple[int, str, str, str]) -> User:
+        return User(row[0], row[1], row[2], row[3])
+
+    @staticmethod
+    def __make_message(row: Tuple[int, str, datetime.datetime, int, int]) -> Message:
+        return Message(row[0], row[1], row[2], row[3], row[4])
 
