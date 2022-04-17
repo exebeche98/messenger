@@ -169,8 +169,6 @@ class DatabaseStorage(AbstractStorage):
                                                                               {'sender_id': _sender_id, 'receiver_id':_receiver_id}))
 
 
-
-
     @staticmethod
     def __make_user(row: Tuple[int, str, str, str]) -> User:
         return User(row[0], row[1], row[2], row[3])
