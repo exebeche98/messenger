@@ -1,6 +1,7 @@
 from message import *
 from user import *
 
+
 import sqlite3
 import uuid
 from typing import Iterable, Optional
@@ -8,10 +9,10 @@ from typing import Iterable, Optional
 from abc import abstractmethod
 from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, AsyncIterable
 import datetime
 
-# TODO logic for conversations and messages
+
 class AbstractStorage(object):
     """
     Определяет интерфейс хранилища пользователей и из сообщений.
@@ -82,6 +83,8 @@ class DatabaseStorage(AbstractStorage):
         )
 
 #######################################################################
+    # def get_users(self) -> AsyncIterable[User]:
+    #     yield from (self.__make_user(row) for row in self.__cursor.execute('SELECT * FROM users'))
     def get_users(self) -> Iterable[User]:
         yield from (self.__make_user(row) for row in self.__cursor.execute('SELECT * FROM users'))
 
@@ -89,7 +92,7 @@ class DatabaseStorage(AbstractStorage):
         try:
             #  'SELECT * FROM notes WHERE id=:id', {'id': note_id}
             user = self.__cursor.execute('SELECT * FROM users WHERE username=:username', {'username': _username})
-            user = self.__make_user(next(user)) # TODO Почему тут должен быть NEXT?
+            user = self.__make_user(next(user))
             return user
         except:
             print(f'Can not find user {_username}...')
@@ -97,15 +100,19 @@ class DatabaseStorage(AbstractStorage):
     def add_user(self, username: str, password: str, phone: str): # TODO добавить условие на пароль
         try:
             _id = uuid.uuid4().int & (1 << 63)-1  # create random int id
-            _user = User(id=_id, username=username, password=password, phone=phone)
+            _user = User(user_id=_id, username=username, password=password, phone=phone)
             self.__cursor.execute(
-                'INSERT INTO users VALUES (:id, :username, :password, :phone ) '
-                '  ON CONFLICT (id) DO UPDATE SET id=:id, username=:username, password=:password, phone=:phone',
+                'INSERT INTO users VALUES (:user_id, :username, :password, :phone ) '
+                '  ON CONFLICT (id) DO UPDATE SET id=:user_id, username=:username, password=:password, phone=:phone',
                 asdict(_user)
             )
             self.__connection.commit()
+
+            print(f'Пользоваьель с именем {username} commit sucsesfull')
+            return True
         except:
             print(f'Пользоваьель с именем {username} уже существует')
+            return False
 
     def delete_user(self, _username: str):
         try:

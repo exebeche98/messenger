@@ -12,8 +12,10 @@ if __name__ == '__main__':
     storage.add_user(username='Ivan', password='123', phone='123')
     storage.add_user(username='Алиса', password='123', phone='123')
     storage.add_user(username='Боб', password='123', phone='123')
+    storage.add_user(username='Steve', password='123', phone='123')
 
     print('All users:')
+
     for user in storage.get_users():
         print(user)
 

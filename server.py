@@ -1,62 +1,125 @@
-from dataclasses import dataclass
-from client import *
-from _datetime import datetime
-from message import *
-from user import *
-import uuid
+from Storage import *
+from pathlib import Path
+from typing import Any, AsyncIterable, Dict, Iterable
+
+from aiohttp import web
+
+import aiohttp_jinja2
+import jinja2
 
 
-@dataclass
-class Server:
-    conversations: {}
-    users: {}
+routes = web.RouteTableDef()
 
-    def show_all_users(self):
-        for user in self.users:
-            print(f"{user}")
 
-    def create_user(self, username: str, password: str):
-        if username in self.users:
-            print(f"User with username {username} already exist, try another username")
-        else:
-            print(f"User {username} added successful")
-            _id = str(uuid.uuid4())
-            _user = User(name=username, id=_id, password=password)
-            self.users[username] = _user
+def __to_list(iterable: AsyncIterable[Any]) -> Iterable[Any]:
+    return [item for item in iterable]
 
-    def delete_user(self, username: str):
-        if username not in self.users:
-            print(f"User with nickname: {username} doesn't exist, try another nickname")
-        else:
-            print(f"User with name {username} deleted")
-            del self.users[username]
 
-    def send_message(self, sender: str, receiver: str, message: str):
-        #_time = datetime.now().strftime("%d/%m/%y %H:%M")
-        _time = datetime.now()
-        _msg = Message(time_send=str(_time), text=message, sender=sender, receiver=receiver)
+@routes.get('/')  # redirect to users list
+async def root(_request: web.Request) -> web.Response:
+    raise web.HTTPFound(location='/login')
 
-        sender_id = self.users[sender].id
-        receiver_id = self.users[receiver].id
 
-        if sender_id + '_' + receiver_id in self.conversations:
-            self.conversations[sender_id + '_' + receiver_id].append(_msg)
-        elif receiver_id + '_' + sender_id in self.conversations:
-            self.conversations[receiver_id + '_' + sender_id].append(_msg)
-        else:
-            self.conversations[sender_id + '_' + receiver_id] = []
-            self.conversations[sender_id + '_' + receiver_id].append(_msg)
+@routes.get('/users/{sender_name}')  # show all users
+@aiohttp_jinja2.template('users.jinja2')
+async def get_users(request: web.Request) -> Dict[str, Any]:
+    storage: AbstractStorage = request.app['storage']
+    return {
+        'name': 'Users Manager',
+        'users': __to_list(storage.get_users()),
+        'sender_name': request.match_info['sender_name']
+    }
 
-    def get_conversation(self, sender: str, receiver: str):
-        sender_id = self.users[sender].id
-        receiver_id = self.users[receiver].id
 
-        if sender_id + '_' + receiver_id in self.conversations:
-            return self.conversations[sender_id + '_' + receiver_id]
-        elif receiver_id + '_' + sender_id in self.conversations:
-            return self.conversations[receiver_id + '_' + sender_id]
-        else:
-            print("No such conversation!")
+@routes.post('/users/{sender_name}')
+@aiohttp_jinja2.template('users.jinja2')
+async def select_user(request: web.Request) -> web.Response:
+    storage: AbstractStorage = request.app['storage']
+    data = dict(await request.post()) # receiver_name
+    sender_name = request.match_info['sender_name']
+    return web.HTTPFound(location=f'/conversation/{sender_name}/{data["username"]}')
+
+
+@routes.get('/conversation/{sender_name}/{receiver_name}', allow_head=False)
+@aiohttp_jinja2.template('conversation.jinja2')
+async def conversation(request: web.Request) -> Dict[str, Any]:
+    storage: AbstractStorage = request.app['storage']
+    sender_name = request.match_info['sender_name']
+    receiver_name = request.match_info['receiver_name']
+
+    sender_id = storage.get_user_by_name(sender_name).user_id
+    receiver_id = storage.get_user_by_name(receiver_name).user_id
+
+    messages = __to_list(storage.get_two_users_conversation(sender_name, receiver_name))
+    messages.sort(key=lambda x: x.date_send)
+    return {
+        'name': 'Conversation',
+        'messages': messages,
+        'sender_id': sender_id,
+        'receiver_id': receiver_id,
+        'sender_name': sender_name,
+        'receiver_name': receiver_name
+    }
+
+
+@routes.post('/conversation/{sender_name}/{receiver_name}')
+@aiohttp_jinja2.template('conversation.jinja2')
+async def send_message(request: web.Request) -> Dict[str, Any]:
+    storage: AbstractStorage = request.app['storage']
+    data = dict(await request.post())  # message text
+    sender_name = request.match_info['sender_name']
+    receiver_name = request.match_info['receiver_name']
+    storage.send_message(sender_name=sender_name, receiver_name=receiver_name, text=data['message'])
+    return web.HTTPFound(location=f'/conversation/{sender_name}/{receiver_name}')
+
+
+@routes.get('/login')
+@aiohttp_jinja2.template('login.jinja2')
+async def get_login(request: web.Request) -> web.Response:
+    storage: AbstractStorage = request.app['storage']
+    return {
+        'name': 'Введите данные для входа'
+    }
+
+
+@routes.post('/login')
+@aiohttp_jinja2.template('login.jinja2')
+async def login_user(request: web.Request) -> web.Response:
+    storage: AbstractStorage = request.app['storage']
+    data = dict(await request.post())
+    try:
+        user = storage.get_user_by_name(data['username'])
+    except:
+        print("No such user")
+        raise web.HTTPForbidden()
+
+    if user.password == data['password']:
+        print("Login correct")
+        return web.HTTPFound(location=f'/users/{data["username"]}')
+
+    else:
+        print("Login error")
+        raise web.HTTPForbidden()
+
+
+if __name__ == '__main__':
+    settings = {
+        'port': 8081,
+        'data_storage': {
+            'storage': 'storage.db',
+        }
+    }
+
+    app = web.Application()
+    app['storage'] = DatabaseStorage(Path('storage.db'))
+    templates_directory = Path(__file__).parent.joinpath('templates')
+    aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(templates_directory)))
+    app.add_routes(routes)
+
+    # setup_swagger(app, title='Notes API')
+
+    web.run_app(app, port=settings['port'])
+
 
 
 
