@@ -12,7 +12,7 @@ class User:
     def to_json(self) -> Dict[str, Any]:
         return {
             'user_id': str(self.user_id),
-            'username:': self.username,
+            'username': self.username,
             'password': self.password,
-            'phone' : self.phone,
+            'phone': self.phone
         }

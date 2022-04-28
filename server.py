@@ -102,6 +102,50 @@ async def login_user(request: web.Request) -> web.Response:
         print("Login error")
         raise web.HTTPForbidden()
 
+###########################################################################################################
+# переписки двух пользователей
+# метод отправки сообщения.
+
+
+@routes.get('/api/users', allow_head=False)
+async def get_users(request: web.Request) -> Dict[str, Any]:
+    storage: AbstractStorage = request.app['storage']
+    _users = [user.to_json() for user in storage.get_users()]
+    return web.json_response(_users)
+
+
+@routes.get('/api/conversation/{sender_name}/{receiver_name}', allow_head=False)
+async def get_conversation(request: web.Request) -> Dict[str, Any]:
+    storage: AbstractStorage = request.app['storage']
+    sender_name = request.match_info['sender_name']
+    receiver_name = request.match_info['receiver_name']
+    sender_id = storage.get_user_by_name(sender_name).user_id
+    receiver_id = storage.get_user_by_name(receiver_name).user_id
+
+    messages = __to_list(storage.get_two_users_conversation(sender_name, receiver_name))
+    messages.sort(key=lambda x: x.date_send)
+
+    _messages = [message.to_json() for message in messages]
+
+    return web.json_response(_messages)
+
+
+@routes.post('/api/conversation/{sender_name}/{receiver_name}')
+async def send_message(request: web.Request) -> web.Response:
+    print("Server post method")
+    data = dict(await request.json())
+    print(data)
+    storage: AbstractStorage = request.app['storage']
+    sender_name = request.match_info['sender_name']
+    receiver_name = request.match_info['receiver_name']
+    try:
+
+        storage.send_message(sender_name=sender_name, receiver_name=receiver_name, text=data['message'])
+        print("Data take successful")
+    except Exception as error:
+        print("Error while taken data")
+        return web.HTTPBadRequest(reason=str(error))
+
 
 if __name__ == '__main__':
     settings = {
