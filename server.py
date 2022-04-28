@@ -40,29 +40,30 @@ async def select_user(request: web.Request) -> web.Response:
     return web.HTTPFound(location=f'/conversation/{sender_name}/{data["username"]}')
 
 
-@routes.get('/conversation/{sender_name}/{receiver_name}', allow_head=False)
+@routes.get('/conversation/{sender_name}/{receiver_name}', allow_head=False) #  Работает
 @aiohttp_jinja2.template('conversation.jinja2')
 async def conversation(request: web.Request) -> Dict[str, Any]:
     storage: AbstractStorage = request.app['storage']
     sender_name = request.match_info['sender_name']
     receiver_name = request.match_info['receiver_name']
-
     sender_id = storage.get_user_by_name(sender_name).user_id
     receiver_id = storage.get_user_by_name(receiver_name).user_id
 
     messages = __to_list(storage.get_two_users_conversation(sender_name, receiver_name))
     messages.sort(key=lambda x: x.date_send)
+
     return {
         'name': 'Conversation',
         'messages': messages,
         'sender_id': sender_id,
         'receiver_id': receiver_id,
         'sender_name': sender_name,
-        'receiver_name': receiver_name
+        'receiver_name': receiver_name,
+        'current_message': ''
     }
 
 
-@routes.post('/conversation/{sender_name}/{receiver_name}')
+@routes.post('/conversation/{sender_name}/{receiver_name}')  # работает
 @aiohttp_jinja2.template('conversation.jinja2')
 async def send_message(request: web.Request) -> Dict[str, Any]:
     storage: AbstractStorage = request.app['storage']
@@ -75,7 +76,7 @@ async def send_message(request: web.Request) -> Dict[str, Any]:
 
 @routes.get('/login')
 @aiohttp_jinja2.template('login.jinja2')
-async def get_login(request: web.Request) -> web.Response:
+async def get_login(request: web.Request) -> web.Response: # работает
     storage: AbstractStorage = request.app['storage']
     return {
         'name': 'Введите данные для входа'

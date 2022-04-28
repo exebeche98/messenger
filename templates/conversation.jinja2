@@ -5,22 +5,39 @@
     <title>{{name}}</title>
 </head>
 <body>
-    <table>
-        {% for message in messages %}
-        <tr>
-            <td>{{message.date_send.strftime('%b %d %Y %H:%M') }}</td>
-            <td>{{ sender_name if message.from_id == sender_id else receiver_name }}</td>
-            <td>{{message.message_text}}</td>
+    <div id="myDiv">
+        <table>
+            {% for message in messages %}
+            <tr>
+                <td>{{message.date_send.strftime('%b %d %Y %H:%M') }}</td>
+                <td>{{ sender_name if message.from_id == sender_id else receiver_name }}</td>
+                <td>{{message.message_text}}</td>
 
-        </tr>
-        {% endfor %}
-    </table>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
     <form action="/conversation/{{sender_name}}/{{receiver_name}}" method="post" accept-charset="utf-8" enctype="application/x-www-form-urlencoded">
 
     <label for="message">Message</label>
-    <input id="message" name="message" type="text" value=""/>
 
-    <input type="submit" value="add"/>
+    <input id="message_ID" name="message" type="text" value="">
+
+    <input type="submit" value="send"/>
 </form>
 </body>
+
+{% block javascript %}
+	<script>
+	     var a = localStorage.getItem('text_cash');
+	     document.getElementById("message_ID").value = a;
+         document.getElementById("message_ID").addEventListener('input', (event) => {
+         localStorage.setItem('text_cash', event.target.value)
+         })
+         setInterval(function() {
+                  window.location.reload();
+                }, 5000);
+
+    </script>
+{% endblock %}
 </html>
